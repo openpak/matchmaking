@@ -8,4 +8,4 @@ the wire and call this over gRPC; the core keeps the state, in Postgres.
 * [docs/adapter-guide.md](docs/adapter-guide.md): how a console maps onto it
 * [docs/deploy.md](docs/deploy.md): run and deploy
 
-Ports 20240 HTTP, 20241 gRPC, 20242 metrics. AGPL-3.0-only.
+Ports 20250 HTTP, 20251 gRPC, 20252 metrics. AGPL-3.0-only.

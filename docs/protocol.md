@@ -27,7 +27,7 @@ wire, the ticket, the connection. Room and member state live here.
 All state is Postgres (`sessions`, `members`). The only in-memory part is the `Watch` fan-out; a
 restart drops the streams and loses nothing, adapters reconnect and `GetSession` to resync.
 
-## Calls (gRPC `openpak.matchmaking.v1.Matchmaking`, port 20241, metadata `x-internal-key`)
+## Calls (gRPC `openpak.matchmaking.v1.Matchmaking`, port 20251, metadata `x-internal-key`)
 
 | Call | Meaning |
 | --- | --- |

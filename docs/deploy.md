@@ -9,7 +9,7 @@ GOWORK=off go run ./cmd/matchmaking
 | Variable | Meaning |
 | --- | --- |
 | `MATCHMAKING_DATABASE_URL` | Postgres database `matchmaking`; the schema migrates at start |
-| `MATCHMAKING_HTTP_ADDR` / `_GRPC_ADDR` / `_METRICS_ADDR` | `:20240` / `:20241` / `:20242` |
+| `MATCHMAKING_HTTP_ADDR` / `_GRPC_ADDR` / `_METRICS_ADDR` | `:20250` / `:20251` / `:20252` |
 | `MATCHMAKING_INTERNAL_KEY` | what adapters (gRPC `x-internal-key`) and the erasure finaliser (`X-Internal-Key`) present |
 
 Tests: `MATCHMAKING_TEST_DATABASE_URL=postgres://... GOWORK=off go test ./...` (skipped without it).
@@ -22,7 +22,7 @@ Tests: `MATCHMAKING_TEST_DATABASE_URL=postgres://... GOWORK=off go test ./...` (
 3. Copy `deploy/openpak-matchmaking.container` to `~/.config/containers/systemd/`, run
    `~/openpak/deploy/pin-ips.sh --apply`, `systemctl --user daemon-reload`, then
    `systemctl --user start openpak-matchmaking`.
-4. Check: `podman exec openpak-chat wget -qO- http://openpak-matchmaking:20240/healthz` (200).
+4. Check: `podman exec openpak-chat wget -qO- http://openpak-matchmaking:20250/healthz` (200).
 
 The HTTP port is on the container network and loopback only; never route it through Traefik.
 Logs: one line per HTTP request (method, path, status, ms) and per gRPC call (method, code, ms);
@@ -31,5 +31,5 @@ never bodies, keys, secrets, attributes or addresses.
 ## Erasure
 
 `DELETE /internal/accounts/{account}/data` with `Authorization: Bearer $ACCOUNT_ERASE_KEY` (the shared finaliser key; `X-Internal-Key` also works) makes the account leave every
-session it is in (owners migrate or rooms end) and returns `{"deleted":n}`. Production: add `matchmaking=http://openpak-matchmaking:20240` to the website's
+session it is in (owners migrate or rooms end) and returns `{"deleted":n}`. Production: add `matchmaking=http://openpak-matchmaking:20250` to the website's
 `ERASURE_SERVICES` (`20-erase.conf` drop-in) and `ACCOUNT_ERASE_KEY` to this service's environment. A repeat is a 200 with 0.

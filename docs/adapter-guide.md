@@ -12,7 +12,7 @@ and the id maps it needs to talk to the console.
 4. Heartbeat the accounts that are connected (every ttl/3), and Leave on disconnect.
 5. One `Watch` stream per adapter process for all connected accounts; render events as the
    console's notifications. After a reconnect call `GetSession` for each live session.
-6. Env: `<SERVICE>_MATCHMAKING_ADDR` (`openpak-matchmaking:20241`) and `<SERVICE>_MATCHMAKING_KEY`.
+6. Env: `<SERVICE>_MATCHMAKING_ADDR` (`openpak-matchmaking:20251`) and `<SERVICE>_MATCHMAKING_KEY`.
    Generate the client from `proto/openpak/matchmaking/v1/matchmaking.proto`.
 
 ## Per console

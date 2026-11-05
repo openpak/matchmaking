@@ -1,6 +1,6 @@
 // Matchmaking: the neutral session core. Rooms, lobbies, members, attributes, search and
 // peer-to-peer signaling for every network's adapter (np-matching2 first; Demonware, Blaze and
-// NEX later). Ports: 20240 HTTP, 20241 gRPC, 20242 metrics (block 20240).
+// NEX later). Ports: 20250 HTTP, 20251 gRPC, 20252 metrics (block 20250).
 package main
 
 import (
@@ -54,14 +54,14 @@ func main() {
 
 	mux := http.NewServeMux()
 	(&api.Server{Svc: svc, Key: key, EraseKey: os.Getenv("ACCOUNT_ERASE_KEY")}).Register(mux)
-	httpAddr := env("MATCHMAKING_HTTP_ADDR", "127.0.0.1:20240")
+	httpAddr := env("MATCHMAKING_HTTP_ADDR", "127.0.0.1:20250")
 	go func() {
 		log.Printf("matchmaking: http on %s", httpAddr)
 		srv := &http.Server{Addr: httpAddr, Handler: httplog.Middleware(mux), ReadHeaderTimeout: 5 * time.Second}
 		log.Fatal(srv.ListenAndServe())
 	}()
 
-	grpcAddr := env("MATCHMAKING_GRPC_ADDR", "127.0.0.1:20241")
+	grpcAddr := env("MATCHMAKING_GRPC_ADDR", "127.0.0.1:20251")
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
 		log.Fatalf("matchmaking: grpc listen: %v", err)
@@ -73,7 +73,7 @@ func main() {
 		log.Fatal(gs.Serve(lis))
 	}()
 
-	metricsAddr := env("MATCHMAKING_METRICS_ADDR", "127.0.0.1:20242")
+	metricsAddr := env("MATCHMAKING_METRICS_ADDR", "127.0.0.1:20252")
 	go func() {
 		m := http.NewServeMux()
 		m.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) })

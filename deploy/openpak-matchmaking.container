@@ -9,9 +9,10 @@ ContainerName=openpak-matchmaking
 Image=ghcr.io/openpak/matchmaking:latest
 AutoUpdate=registry
 Network=openpak.network
-PublishPort=127.0.0.1:20240:20240
+PublishPort=127.0.0.1:20250:20250
 EnvironmentFile=%h/openpak/deploy/.env
-Environment=MATCHMAKING_HTTP_ADDR=:20240 MATCHMAKING_GRPC_ADDR=:20241 MATCHMAKING_METRICS_ADDR=:20242
+EnvironmentFile=%h/openpak/deploy/erase.env
+Environment=MATCHMAKING_HTTP_ADDR=:20250 MATCHMAKING_GRPC_ADDR=:20251 MATCHMAKING_METRICS_ADDR=:20252
 [Service]
 Restart=always
 [Install]
