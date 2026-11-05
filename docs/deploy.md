@@ -30,6 +30,6 @@ never bodies, keys, secrets, attributes or addresses.
 
 ## Erasure
 
-`DELETE /internal/accounts/{account}/data` with `X-Internal-Key` makes the account leave every
-session it is in (owners migrate or rooms end) and returns `{"deleted":n}`. Register the URL with the
-website's erasure finaliser like the other cores. A repeat is a 200 with 0.
+`DELETE /internal/accounts/{account}/data` with `Authorization: Bearer $ACCOUNT_ERASE_KEY` (the shared finaliser key; `X-Internal-Key` also works) makes the account leave every
+session it is in (owners migrate or rooms end) and returns `{"deleted":n}`. Production: add `matchmaking=http://openpak-matchmaking:20240` to the website's
+`ERASURE_SERVICES` (`20-erase.conf` drop-in) and `ACCOUNT_ERASE_KEY` to this service's environment. A repeat is a 200 with 0.

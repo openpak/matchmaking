@@ -53,7 +53,7 @@ func main() {
 	}()
 
 	mux := http.NewServeMux()
-	(&api.Server{Svc: svc, Key: key}).Register(mux)
+	(&api.Server{Svc: svc, Key: key, EraseKey: os.Getenv("ACCOUNT_ERASE_KEY")}).Register(mux)
 	httpAddr := env("MATCHMAKING_HTTP_ADDR", "127.0.0.1:20240")
 	go func() {
 		log.Printf("matchmaking: http on %s", httpAddr)

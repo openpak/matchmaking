@@ -65,7 +65,7 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	(&api.Server{Svc: svc, Key: key}).Register(mux)
+	(&api.Server{Svc: svc, Key: key, EraseKey: "erase-key"}).Register(mux)
 	h := httptest.NewServer(mux)
 	t.Cleanup(h.Close)
 	return &env{c: pb.NewMatchmakingClient(conn), svc: svc, http: h}
@@ -273,7 +273,7 @@ func TestFlow(t *testing.T) {
 	if r.StatusCode != 401 {
 		t.Fatalf("erase needs key: %d", r.StatusCode)
 	}
-	req.Header.Set("X-Internal-Key", key)
+	req.Header.Set("Authorization", "Bearer erase-key")
 	r, _ = http.DefaultClient.Do(req)
 	if r.StatusCode != 200 {
 		t.Fatalf("erase: %d", r.StatusCode)

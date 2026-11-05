@@ -2,13 +2,14 @@
 //
 //	GET    /healthz                                  200 when the database answers
 //	DELETE /internal/accounts/{account}/data         account erasure: the account leaves every session
-//	                                                 (X-Internal-Key) -> {"deleted":n}
+//	                                                 (X-Internal-Key, or Bearer ACCOUNT_ERASE_KEY) -> {"deleted":n}
 package api
 
 import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/openpak/matchmaking/internal/service"
 	"github.com/openpak/matchmaking/internal/store"
@@ -17,6 +18,8 @@ import (
 type Server struct {
 	Svc *service.Service
 	Key string
+	// EraseKey is the shared ACCOUNT_ERASE_KEY the website's erasure finaliser sends as a bearer token.
+	EraseKey string
 }
 
 func (s *Server) Register(mux *http.ServeMux) {
@@ -32,7 +35,11 @@ func (s *Server) Register(mux *http.ServeMux) {
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.Key == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Internal-Key")), []byte(s.Key)) != 1 {
+		ok := s.Key != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Internal-Key")), []byte(s.Key)) == 1
+		if b, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); found && s.EraseKey != "" && subtle.ConstantTimeCompare([]byte(b), []byte(s.EraseKey)) == 1 {
+			ok = true
+		}
+		if !ok {
 			jsonOut(w, http.StatusUnauthorized, map[string]any{"error": "internal key"})
 			return
 		}
