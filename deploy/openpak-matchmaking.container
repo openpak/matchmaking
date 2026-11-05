@@ -1,0 +1,18 @@
+# Sample only. Copy to ~/.config/containers/systemd/openpak-matchmaking.container, then
+# ~/openpak/deploy/pin-ips.sh --apply to pin its address.
+[Unit]
+Description=OpenPak matchmaking (neutral rooms, lobbies, search and signaling)
+Requires=openpak-postgres.service
+After=openpak-postgres.service
+[Container]
+ContainerName=openpak-matchmaking
+Image=ghcr.io/openpak/matchmaking:latest
+AutoUpdate=registry
+Network=openpak.network
+PublishPort=127.0.0.1:20240:20240
+EnvironmentFile=%h/openpak/deploy/.env
+Environment=MATCHMAKING_HTTP_ADDR=:20240 MATCHMAKING_GRPC_ADDR=:20241 MATCHMAKING_METRICS_ADDR=:20242
+[Service]
+Restart=always
+[Install]
+WantedBy=default.target

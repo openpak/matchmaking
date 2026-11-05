@@ -1,0 +1,308 @@
+syntax = "proto3";
+
+package openpak.matchmaking.v1;
+
+option go_package = "github.com/openpak/matchmaking/proto/openpak/matchmaking/v1;matchmakingv1";
+
+// The neutral matchmaking core. One model for every network's "rooms, lobbies and games":
+//
+//   * a Session is a container of members with typed attributes. kind is "room" (the thing
+//     players play in) or "lobby" (a place that lists and groups rooms); a room may name its
+//     lobby as parent_id. The core does not interpret kind beyond that.
+//   * a Member is an account inside a session with its own attributes and a per-session number
+//     (member_no) that adapters hand to consoles that want a small integer.
+//   * attributes are typed (int, string, bytes) and may be searchable. Opaque blobs (data) let an
+//     adapter keep its console wire struct next to the neutral fields without the core
+//     reading it (PS3 RoomDataInternal, a NEX MatchmakeSession, a Blaze GameData).
+//   * search is a filter over searchable attributes plus a few built-ins, ordered and paged.
+//   * signaling is two things: every member publishes Endpoints (public address, NAT type,
+//     relay) that other members read to open a peer-to-peer path, and Signal carries a small
+//     message between members through the core when no direct path exists yet. Both ride the
+//     same event stream as membership changes.
+//
+// Every request names the caller's network ("np", "x360", "wiiu", "switch", "wfc", "xbox") and
+// the title as that network knows it, as the other cores do. Titles are cross-network by default
+// (a session created on one network is findable from another);
+// a session created with network_only=true is seen only from title.network.
+//
+// State is Postgres. Live fan-out (the Watch stream) is in memory and rebuilt from Postgres: a
+// restart drops the streams, adapters reconnect and call GetSession to resync, no row is lost.
+// Sessions and members expire if nobody calls Heartbeat for ttl_seconds.
+//
+// Callers present x-internal-key. Identities are core account ids (UUID).
+service Matchmaking {
+  // Create a session with the creator as first member (owner).
+  rpc CreateSession(CreateSessionRequest) returns (SessionResponse);
+  // Join adds a member; returns the session with the full member list.
+  rpc JoinSession(JoinSessionRequest) returns (SessionResponse);
+  // CreateOrJoin finds an open session by unique_key (e.g. a world id) or creates it; one round trip
+  // for consoles that have one "create and join" call.
+  rpc CreateOrJoinSession(CreateSessionRequest) returns (SessionResponse);
+  rpc LeaveSession(LeaveSessionRequest) returns (LeaveResponse);
+  rpc GetSession(GetSessionRequest) returns (SessionResponse);
+  rpc SearchSessions(SearchSessionsRequest) returns (SearchSessionsResponse);
+
+  // Owner (or the adapter acting for it) changes session fields; members change their own fields.
+  rpc UpdateSession(UpdateSessionRequest) returns (SessionResponse);
+  rpc UpdateMember(UpdateMemberRequest) returns (SessionResponse);
+  rpc KickMember(KickMemberRequest) returns (SessionResponse);
+  rpc SetOwner(SetOwnerRequest) returns (SessionResponse);
+
+  // Keeps sessions the account is in alive.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Signaling.
+  rpc SetEndpoints(SetEndpointsRequest) returns (SessionResponse);
+  rpc Signal(SignalRequest) returns (SignalResponse);
+
+  // Watch streams session events for one adapter connection: everything for the sessions the
+  // given accounts are members of, plus signals addressed to them. Events are not stored.
+  rpc Watch(WatchRequest) returns (stream Event);
+}
+
+message TitleRef {
+  string network = 1;
+  string title = 2;
+}
+
+enum AttrType {
+  ATTR_TYPE_UNSPECIFIED = 0;
+  ATTR_TYPE_INT = 1;
+  ATTR_TYPE_STRING = 2;
+  ATTR_TYPE_BYTES = 3;
+}
+
+message Attr {
+  string name = 1;     // [A-Za-z0-9_.:-]{1,64}
+  AttrType type = 2;
+  int64 int_value = 3;
+  string string_value = 4;  // up to 1024 bytes
+  bytes bytes_value = 5;    // up to 1024 bytes
+  // searchable attributes are indexed and visible to SearchSessions; the rest are returned only
+  // inside GetSession/JoinSession by members.
+  bool searchable = 6;
+}
+
+message Endpoint {
+  string kind = 1;  // "udp" (public address), "relay" (TURN allocation), "local" (LAN address)
+  string host = 2;
+  uint32 port = 3;
+  // nat_type is the console's own number (PS3 1..3, Xbox 1..3, NEX 1..5); 0 = unknown.
+  uint32 nat_type = 4;
+}
+
+message Member {
+  uint32 member_no = 1;  // 1-based, unique inside the session, never reused while it lives
+  string account_id = 2;
+  string display_name = 3;
+  repeated Attr attrs = 4;
+  bytes data = 5;        // adapter's opaque per-member struct, up to 4096 bytes
+  repeated Endpoint endpoints = 6;
+  bool is_owner = 7;
+  int64 joined_unix_ms = 8;
+  string network = 9;    // the network this member joined from
+}
+
+message Session {
+  string id = 1;
+  TitleRef title = 2;
+  string kind = 3;       // "room" | "lobby"
+  string parent_id = 4;  // a room's lobby
+  string unique_key = 5; // optional, unique per (title, kind): a world id; CreateOrJoin matches on it
+  string owner_id = 6;
+  uint32 max_members = 7;
+  bool open = 8;         // false: JoinSession is refused, hidden from search unless include_closed
+  bool hidden = 9;       // hidden from search always (private room, joined by id or invite only)
+  bool network_only = 10;
+  bool migrate_owner = 11;  // when the owner leaves the oldest member takes over (else the session ends)
+  bool has_secret = 12;     // JoinSessionRequest.secret is required
+  repeated Attr attrs = 13;
+  bytes data = 14;       // adapter's opaque per-session struct, up to 8192 bytes
+  repeated Member members = 15;
+  int64 created_unix_ms = 16;
+  int64 updated_unix_ms = 17;
+  uint32 ttl_seconds = 18;
+  uint32 revision = 19;  // bumps on every change; adapters send it back for optimistic updates
+}
+
+message CreateSessionRequest {
+  TitleRef title = 1;
+  string creator = 2;    // account id, becomes member 1 and owner
+  string display_name = 3;
+  string network = 4;    // the creator's network; defaults to title.network
+  string kind = 5;       // default "room"
+  string parent_id = 6;
+  string unique_key = 7;
+  uint32 max_members = 8;  // default 8, max 1024
+  bool closed = 9;         // start closed (default: open)
+  bool hidden = 10;
+  bool network_only = 11;  // default: findable from every network; true keeps it inside title.network
+  bool migrate_owner = 12;
+  string secret = 15;      // optional join secret, stored as a hash
+  repeated Attr attrs = 16;
+  bytes data = 17;
+  bytes member_data = 18;
+  repeated Attr member_attrs = 19;
+  repeated Endpoint endpoints = 20;
+  uint32 ttl_seconds = 21;  // default 300, max 86400
+}
+
+message JoinSessionRequest {
+  string session_id = 1;
+  string account_id = 2;
+  string display_name = 3;
+  string network = 4;
+  string secret = 5;
+  bytes member_data = 6;
+  repeated Attr member_attrs = 7;
+  repeated Endpoint endpoints = 8;
+  bool allow_closed = 9;   // invited players may join a closed session
+}
+
+message LeaveSessionRequest {
+  string session_id = 1;
+  string account_id = 2;
+  string reason = 3;       // free text for the event, up to 64 bytes: "leave", "kicked", "timeout"...
+}
+
+message LeaveResponse {
+  bool left = 1;
+  bool session_ended = 2;
+  string new_owner_id = 3;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+  // viewer (account id) decides whether members and non-searchable attributes are returned: a
+  // member sees all, anyone else only searchable attributes and no endpoints.
+  string viewer = 2;
+}
+
+message Filter {
+  string attr = 1;       // an attribute name, or a built-in: "$members", "$max_members", "$kind", "$created", "$unique_key", "$owner"
+  string op = 2;         // eq ne gt ge lt le prefix
+  int64 int_value = 3;
+  string string_value = 4;
+  bool is_string = 5;
+}
+
+message SearchSessionsRequest {
+  TitleRef title = 1;
+  string viewer = 2;
+  string network = 3;          // the searcher's network
+  repeated string networks = 4; // restrict to sessions created from these networks; empty = all the viewer may see
+  string kind = 5;
+  string parent_id = 6;
+  repeated Filter filters = 7;
+  string sort_attr = 8;        // attribute or built-in, default "$created"
+  bool ascending = 9;
+  uint32 offset = 10;
+  uint32 limit = 11;           // default 20, max 100
+  bool include_closed = 12;
+  bool only_with_free_slots = 13;
+  repeated string owners = 14; // restrict to these owners (friend search)
+}
+
+message SearchSessionsResponse {
+  repeated Session sessions = 1;   // members omitted; member_count is $members
+  uint32 hits = 2;                 // matches before paging
+}
+
+message UpdateSessionRequest {
+  string session_id = 1;
+  string actor = 2;            // must be the owner
+  uint32 expect_revision = 3;  // 0 = don't check
+  repeated Attr set_attrs = 4;
+  repeated string delete_attrs = 5;
+  bytes data = 6;
+  bool set_data = 7;
+  bool set_open = 8;
+  bool open = 9;
+  bool set_max_members = 10;
+  uint32 max_members = 11;
+  bool set_hidden = 12;
+  bool hidden = 13;
+}
+
+message UpdateMemberRequest {
+  string session_id = 1;
+  string account_id = 2;       // whose member record
+  string actor = 3;            // that member, or the owner
+  repeated Attr set_attrs = 4;
+  repeated string delete_attrs = 5;
+  bytes data = 6;
+  bool set_data = 7;
+  string display_name = 8;
+}
+
+message KickMemberRequest {
+  string session_id = 1;
+  string account_id = 2;
+  string actor = 3;
+}
+
+message SetOwnerRequest {
+  string session_id = 1;
+  string account_id = 2;  // new owner, must be a member
+  string actor = 3;       // current owner
+}
+
+message HeartbeatRequest {
+  string account_id = 1;
+}
+
+message HeartbeatResponse {
+  uint32 sessions = 1;
+}
+
+message SetEndpointsRequest {
+  string session_id = 1;
+  string account_id = 2;
+  repeated Endpoint endpoints = 3;
+}
+
+message SignalRequest {
+  string session_id = 1;
+  string from = 2;        // account id
+  string to = 3;          // account id; empty = every other member
+  string kind = 4;        // adapter-defined, up to 32 bytes ("offer", "punch", "ping")
+  bytes payload = 5;      // up to 1024 bytes
+}
+
+message SignalResponse {
+  uint32 delivered = 1;   // members the core had a live Watch stream for
+}
+
+message SessionResponse {
+  Session session = 1;
+  uint32 member_no = 2;   // the caller's own member number where it applies
+  bool created = 3;       // CreateOrJoin: true when a new session was made
+}
+
+message WatchRequest {
+  repeated string accounts = 1;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_SESSION_CREATED = 1;
+  EVENT_TYPE_SESSION_UPDATED = 2;   // attributes, data, open, max_members, owner
+  EVENT_TYPE_SESSION_ENDED = 3;
+  EVENT_TYPE_MEMBER_JOINED = 4;
+  EVENT_TYPE_MEMBER_LEFT = 5;       // reason in text
+  EVENT_TYPE_MEMBER_UPDATED = 6;    // attributes, data, endpoints
+  EVENT_TYPE_OWNER_CHANGED = 7;
+  EVENT_TYPE_SIGNAL = 8;
+}
+
+message Event {
+  EventType type = 1;
+  string session_id = 2;
+  string account_id = 3;     // subject (who joined/left/signalled)
+  string to = 4;             // the member this event is delivered to (watch fan-out)
+  uint32 member_no = 5;
+  string text = 6;           // leave reason, signal kind
+  bytes payload = 7;         // signal payload
+  uint32 revision = 8;
+  int64 at_unix_ms = 9;
+}
